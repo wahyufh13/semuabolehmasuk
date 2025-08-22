@@ -1,0 +1,75 @@
+-- Query untuk Interactive Report - Security Guard Visitor Check
+-- Satu baris per kunjungan dengan data kendaraan dan barang digabung (tanpa duplikasi)
+SELECT 
+    -- Informasi Kunjungan Utama
+    t.VISIT_DATE,
+    t.PURPOSE,
+    t.NUMBER_OF_PEOPLE,
+    t.CHECK_IN,
+    t.CHECK_OUT,
+    -- Dynamic VISIT_STATUS berdasarkan kondisi
+    CASE 
+        WHEN t.CHECK_OUT IS NOT NULL THEN 'COMPLETED'
+        WHEN t.CHECK_IN IS NOT NULL THEN 'ARRIVED'
+        WHEN t.STATUS = 'REGISTERED' OR vi.VISITOR_ID IS NOT NULL THEN 'REGISTERED'
+        ELSE 'SCHEDULED'
+    END as VISIT_STATUS,
+    -- Informasi Pengunjung
+    vi.VISITOR_NAME,
+    vi.PHONE_NUMBER,
+    vi.EMAIL_ADDRESS,
+    
+    -- Informasi Perusahaan
+    c.COMPANY_NAME,
+    
+    -- Informasi Employee yang menyambut
+    e.EMPLOYEE_NAME,
+    -- e.EMPLOYEE_NUMBER,
+    e.RANK,
+    -- e.DIVISION_NAME,
+    -- e.DEPARTMENT_NAME,
+    
+    -- Informasi Kendaraan (menggunakan subquery untuk menghindari duplikasi)
+    (SELECT LISTAGG(v2.PLATE_NUMBER, '; ') WITHIN GROUP (ORDER BY v2.PLATE_NUMBER)
+     FROM INTRANET.GEN_VISIT_TRX_VEHICLE@to_intranet v2 
+     WHERE v2.VISIT_ID = t.VISIT_ID) as PLATE_NUMBER,
+     
+    (SELECT LISTAGG(v2.VEHICLE_TYPE, '; ') WITHIN GROUP (ORDER BY v2.VEHICLE_TYPE)
+     FROM INTRANET.GEN_VISIT_TRX_VEHICLE@to_intranet v2 
+     WHERE v2.VISIT_ID = t.VISIT_ID) as VEHICLE_TYPE,
+     
+    (SELECT LISTAGG(v2.BRAND, '; ') WITHIN GROUP (ORDER BY v2.BRAND)
+     FROM INTRANET.GEN_VISIT_TRX_VEHICLE@to_intranet v2 
+     WHERE v2.VISIT_ID = t.VISIT_ID) as BRAND,
+     
+    (SELECT LISTAGG(v2.MODEL, '; ') WITHIN GROUP (ORDER BY v2.MODEL)
+     FROM INTRANET.GEN_VISIT_TRX_VEHICLE@to_intranet v2 
+     WHERE v2.VISIT_ID = t.VISIT_ID) as MODEL,
+     
+    (SELECT LISTAGG(v2.COLOR, '; ') WITHIN GROUP (ORDER BY v2.COLOR)
+     FROM INTRANET.GEN_VISIT_TRX_VEHICLE@to_intranet v2 
+     WHERE v2.VISIT_ID = t.VISIT_ID) as COLOR,
+    
+    -- Informasi Barang Bawaan (menggunakan subquery untuk menghindari duplikasi)
+    (SELECT LISTAGG(s2.STUFF_NAME, '; ') WITHIN GROUP (ORDER BY s2.STUFF_NAME)
+     FROM INTRANET.GEN_VISIT_TRX_STUFF@to_intranet s2 
+     WHERE s2.VISIT_ID = t.VISIT_ID) as STUFF_NAME,
+     
+    (SELECT LISTAGG(s2.STUFF_STATUS, '; ') WITHIN GROUP (ORDER BY s2.STUFF_STATUS)
+     FROM INTRANET.GEN_VISIT_TRX_STUFF@to_intranet s2 
+     WHERE s2.VISIT_ID = t.VISIT_ID) as STUFF_STATUS,
+     
+    (SELECT LISTAGG(s2.REMARK, '; ') WITHIN GROUP (ORDER BY s2.REMARK)
+     FROM INTRANET.GEN_VISIT_TRX_STUFF@to_intranet s2 
+     WHERE s2.VISIT_ID = t.VISIT_ID AND s2.REMARK IS NOT NULL) as STUFF_REMARK
+
+FROM INTRANET.GEN_VISIT_TRX@to_intranet t
+JOIN INTRANET.GEN_VISIT_MST_VISITOR@to_intranet vi ON t.VISITOR_ID = vi.VISITOR_ID
+JOIN INTRANET.GEN_VISIT_MST_COMPANY@to_intranet c ON vi.COMPANY_ID = c.COMPANY_ID
+LEFT JOIN INTRANET.HR_EMPLOYEES@to_intranet e ON HR_EMPLOYEES_PACK.get_person_id_user_id@to_intranet(t.USER_ID) = e.PERSON_ID
+
+-- WHERE t.VISIT_DATE >= TRUNC(SYSDATE) 
+--    OR (t.CHECK_IN IS NOT NULL AND t.CHECK_OUT IS NULL)
+WHERE TRUNC(t.VISIT_DATE) = TRUNC(SYSDATE)
+
+ORDER BY t.VISIT_DATE DESC, t.CHECK_IN DESC
