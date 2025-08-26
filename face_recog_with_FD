@@ -1,0 +1,190 @@
+import cv2
+from ultralytics import YOLO
+from deep_sort_realtime.deepsort_tracker import DeepSort
+
+# Load YOLOv8 (pretrained COCO, class 0 = person)
+model = YOLO(r"C:\Users\idf32345\Downloads\automatic-number-plate-recognition-python-yolov8-main\automatic-number-plate-recognition-python-yolov8-main\yolov8n_detection.pt")
+
+# Init DeepSORT
+tracker = DeepSort(max_age=30)
+
+# Virtual line (y-coordinate)
+line_y = 300
+in_count, out_count, occupancy = 0, 0, 0
+
+# Open camera / video file
+cap = cv2.VideoCapture(0)  # 0 = webcam
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    # Detect people
+    results = model(frame, classes=[0])  # only 'person'
+    detections = []
+
+    for r in results:
+        for box in r.boxes:
+            x1, y1, x2, y2 = box.xyxy[0].int().tolist()
+            conf = float(box.conf[0])
+            detections.append(([x1, y1, x2 - x1, y2 - y1], conf, "person"))
+
+    # Tracking
+    tracks = tracker.update_tracks(detections, frame=frame)
+
+    for track in tracks:
+        if not track.is_confirmed():
+            continue
+
+        track_id = track.track_id
+        x1, y1, x2, y2 = map(int, track.to_ltrb())
+        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+
+        # Simpan posisi terakhir untuk deteksi arah
+        if not hasattr(track, "last_y"):
+            track.last_y = cy
+
+        # Masuk (atas → bawah)
+        if track.last_y < line_y and cy >= line_y:
+            in_count += 1
+            occupancy += 1
+            print(f"[IN] ID {track_id}")
+
+        # Keluar (bawah → atas)
+        elif track.last_y > line_y and cy <= line_y:
+            out_count += 1
+            occupancy -= 1
+            print(f"[OUT] ID {track_id}")
+
+        track.last_y = cy
+
+        # Draw bounding box
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(frame, f"ID:{track_id}", (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        cv2.circle(frame, (cx, cy), 4, (0, 0, 255), -1)
+
+    # Draw line
+    cv2.line(frame, (0, line_y), (frame.shape[1], line_y), (0, 0, 255), 2)
+
+    # Show counts
+    cv2.putText(frame, f"IN:{in_count} OUT:{out_count} SISA ORANG:{occupancy}",
+                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+    cv2.imshow("People Counting", frame)
+
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+
+
+
+
+# import cv2
+# import torch
+# from ultralytics import YOLO
+# from deep_sort_realtime.deepsort_tracker import DeepSort
+# import face_recognition
+# import datetime
+
+# # Load YOLOv8 model (person detection)
+# model = YOLO(r"C:\Users\idf32345\Downloads\automatic-number-plate-recognition-python-yolov8-main\automatic-number-plate-recognition-python-yolov8-main\yolov8n_detection.pt")  # Use yolov8n, yolov8s, or custom model
+
+# # Initialize DeepSORT tracker
+# tracker = DeepSort(max_age=30)
+
+# # Define virtual line (y-position of line in frame)
+# line_y = 300
+# in_count = 0
+# out_count = 0
+# occupancy = 0
+
+# # Load known faces (for recognition)
+# known_face_encodings = []
+# known_face_names = []
+
+# # Example: Load one known face
+# image = face_recognition.load_image_file("alice.jpg")
+# encoding = face_recognition.face_encodings(image)[0]
+# known_face_encodings.append(encoding)
+# known_face_names.append("Alice")
+
+# # Open video/camera
+# cap = cv2.VideoCapture(0)  # 0 = webcam, or use video file
+
+# while True:
+#     ret, frame = cap.read()
+#     if not ret:
+#         break
+
+#     # Detect persons
+#     results = model(frame, classes=[0])  # class 0 = person
+#     detections = []
+
+#     for r in results:
+#         for box in r.boxes:
+#             x1, y1, x2, y2 = box.xyxy[0].int().tolist()
+#             conf = float(box.conf[0])
+#             detections.append(([x1, y1, x2 - x1, y2 - y1], conf, "person"))
+
+#     # Update tracker
+#     tracks = tracker.update_tracks(detections, frame=frame)
+
+#     for track in tracks:
+#         if not track.is_confirmed():
+#             continue
+#         track_id = track.track_id
+#         ltrb = track.to_ltrb()
+#         x1, y1, x2, y2 = map(int, ltrb)
+#         cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+
+#         # Store trajectory history
+#         if not hasattr(track, "last_y"):
+#             track.last_y = cy
+
+#         # Direction check
+#         if track.last_y < line_y and cy >= line_y:
+#             in_count += 1
+#             occupancy += 1
+#             print(f"[IN] Person {track_id} at {datetime.datetime.now()}")
+
+#         elif track.last_y > line_y and cy <= line_y:
+#             out_count += 1
+#             occupancy -= 1
+#             print(f"[OUT] Person {track_id} at {datetime.datetime.now()}")
+
+#         track.last_y = cy
+
+#         # Face recognition (optional)
+#         face_frame = frame[y1:y2, x1:x2]
+#         rgb_face = cv2.cvtColor(face_frame, cv2.COLOR_BGR2RGB)
+#         encodings = face_recognition.face_encodings(rgb_face)
+#         name = "Unknown"
+#         if len(encodings) > 0:
+#             matches = face_recognition.compare_faces(known_face_encodings, encodings[0])
+#             if True in matches:
+#                 idx = matches.index(True)
+#                 name = known_face_names[idx]
+
+#         # Draw bounding box & info
+#         cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
+#         cv2.putText(frame, f"ID:{track_id} {name}", (x1, y1-10),
+#                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
+
+#     # Draw virtual line
+#     cv2.line(frame, (0, line_y), (frame.shape[1], line_y), (0,0,255), 2)
+
+#     # Display counts
+#     cv2.putText(frame, f"IN:{in_count} OUT:{out_count} OCC:{occupancy}", (10,30),
+#                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+
+#     cv2.imshow("Gate Monitoring", frame)
+
+#     if cv2.waitKey(1) & 0xFF == ord("q"):
+#         break
+
+# cap.release()
+# cv2.destroyAllWindows()
